@@ -102,6 +102,8 @@ pedfate<-left_join(nestdata,ped, by='NestID')
 
 
 
+
+
 #remember to check with the pedigree or bird ID table as well to see if there are any 
 #birds that we missed but ringed retrospectively 
 #check that they survived 90 days  (sys_stat per field period) or 17 days 
