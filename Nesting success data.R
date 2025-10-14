@@ -11,13 +11,17 @@ PATH <- paste0(DRIVERINFO, "DBQ=", MDBPATH)
 
 swdb<-odbcDriverConnect(PATH)
 
-nestdata<-sqlFetch(swdb, 'tblNestInfo', stringsAsFactors=F)
-
-nestdata<-nestdata[,c(1:19)]
-
-breedgroup<-sqlQuery(swdb, 'SELECT tblBreedStatus.BreedGroupID, tblBreedStatus.BirdID, tblBreedStatus.Status, tblBreedGroupLocation.TerritoryID, tblBreedGroupLocation.FieldPeriodID
-FROM tblBreedGroupLocation INNER JOIN tblBreedStatus ON tblBreedGroupLocation.BreedGroupID = tblBreedStatus.BreedGroupID;
+nestdata<-sqlQuery(swdb, 'SELECT tblNestInfo.*, tblBreedGroupLocation.FieldPeriodID, tblBreedGroupLocation.TerritoryID, tblFieldPeriodIDs.Island, tblFieldPeriodIDs.PeriodYear
+FROM tblFieldPeriodIDs INNER JOIN (tblBreedGroupLocation INNER JOIN tblNestInfo ON tblBreedGroupLocation.BreedGroupID = tblNestInfo.BreedGroupID) ON tblFieldPeriodIDs.FieldPeriodID = tblBreedGroupLocation.FieldPeriodID;
 ', stringsAsFactors=F)
+
+nestdata<-nestdata[,-c(20:22)]
+nestdata<-filter(nestdata, nestdata$Island=='CN')
+
+breedgroup<-sqlQuery(swdb, "SELECT tblBreedStatus.BreedGroupID, tblBreedStatus.BirdID, tblBreedStatus.Status, tblBreedGroupLocation.TerritoryID, tblBreedGroupLocation.FieldPeriodID, tblFieldPeriodIDs.Island
+FROM tblFieldPeriodIDs INNER JOIN (tblBreedGroupLocation INNER JOIN tblBreedStatus ON tblBreedGroupLocation.BreedGroupID = tblBreedStatus.BreedGroupID) ON tblFieldPeriodIDs.FieldPeriodID = tblBreedGroupLocation.FieldPeriodID
+WHERE (((tblFieldPeriodIDs.Island)='CN'));"
+, stringsAsFactors=F)
 
 breedgroup<-arrange(breedgroup, BreedGroupID)
 
@@ -71,7 +75,7 @@ nestdata$layyear<-str_sub(nestdata$AvgLaydate,1,4)
 #remove nests with NA lay date earliest and latest 
 nestdata<-nestdata[!with(nestdata, is.na(LayDateEarliest) & is.na(LayDateLatest)),]
 
-#3309 nests
+#3092 nests
 
 #add time period 
 nestdata<-nestdata%>%
@@ -84,10 +88,15 @@ nestdata<-nestdata%>%
 nestdata<-nestdata %>% filter(layyear<2024) #remove 2024 
 
 
+#merge nest data with breed group data 
+
+nestdata<-left_join(nestdata,breedgroupinfo, by=c('BreedGroupID'))
+
+
 #checking with pedigree 90 day survival 
 
-ars90day<-read.csv('ars_90day.csv', stringsAsFactors = F)  #but this is the parent though..  and ars 
-ars90day<-ars90day[,-c(1)]
+# ars90day<-read.csv('ars_90day.csv', stringsAsFactors = F)  #but this is the parent though..  and ars 
+# ars90day<-ars90day[,-c(1)]
 
 #read pedigree
 ped<-read.csv('updated pedigree.csv', stringsAsFactors = F, sep=';')
@@ -97,8 +106,11 @@ ped<-filter(ped, ped$GenDadConfidence >=80 & ped$GenMumConfidence >=80)
 
 pedfate<-left_join(nestdata,ped, by='NestID')
 
+
 #nests that have no fledglings but have birds from the pedigree 
 #there are also more rows when joined so multiple birds from same nest 
+
+#how do you know if its the same bird? maybe its the same bird but not assigned to the nest? 
 
 
 
