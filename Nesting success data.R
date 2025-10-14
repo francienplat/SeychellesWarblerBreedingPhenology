@@ -107,12 +107,59 @@ ped<-filter(ped, ped$GenDadConfidence >=80 & ped$GenMumConfidence >=80)
 pedfate<-left_join(nestdata,ped, by='NestID')
 
 
+lifespan<-read.csv('lifespan_28_5_24.csv', stringsAsFactors = F)
+lifespan<-lifespan[,-c(1)]
+pedfate<-left_join(pedfate, lifespan, by='BirdID')
+
+
+pedfate<-pedfate%>%group_by(NestID)%>%
+  mutate(nrpedrow= case_when(is.na(BirdID)~ 0, TRUE ~ n()
+  ))
+
+pedfate<-pedfate%>%
+  group_by(NestID)%>%
+  mutate(nrpedfl = sum(newlifespan > 20 ))
+
+pedfate<-pedfate%>%
+  mutate(maxfl = max(NoFledglings, nrpedfl))
+
+
+
+pedfate<-pedfate%>%
+  mutate(maxclutchsize = max(nrpedrow, ClutchSize, BroodSize))
+
+pedfate$maxfl[is.na(pedfate$maxfl)]<-0
+
+pedfate$propfl_true<-pedfate$maxfl / pedfate$maxclutchsize
+
+
+#nan for nests that have 0 eggs 
+
+pedfate<-pedfate[,-c(29:36)]
+pedfate<-pedfate[,-c(27:29)]
+pedfate<-unique(pedfate)
+
+
+test<-pedfate%>%
+  group_by(NestID)%>%
+  summarise(n=n())
+
+#no more duplicate rows 
+
+write.csv(pedfate, 'pedfate.csv')
+
 #nests that have no fledglings but have birds from the pedigree 
 #there are also more rows when joined so multiple birds from same nest 
 
 #how do you know if its the same bird? maybe its the same bird but not assigned to the nest? 
 
+#create new row in the df 
+#if nr of fledglings is 0 and bird ID is not NA, assign mismatch 
 
+test<-pedfate %>%
+  mutate(mismatch= case_when(NoFledglings==0 & !is.na(BirdID) & newlifespan>20 ~ 'Mismatch',
+                             NoFledglings==0 & !is.na(BirdID) & newlifespan<20 ~ 'Match',
+                             NoFledglings==0 & is.na(BirdID)~ 'Match'))
 
 
 
