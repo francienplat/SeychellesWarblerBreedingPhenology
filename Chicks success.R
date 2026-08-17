@@ -8,6 +8,8 @@ library(lme4)
 library(DHARMa)
 library(car)
 
+pedfate<-pedfate[,-c(1)]
+
 chicks <- pedfate|>
   filter(
     !is.na(maxclutchsize),
@@ -27,7 +29,14 @@ chicks <- pedfate|>
   unnest(chick_data)|>
   ungroup()
 
+
+View(chicks)
 write.csv(chicks, 'chick_success_data.csv')
+
+"%!in%" <-Negate("%in%")
+
+tormv<-c(2001,2020)
+chicks<-filter(chicks, chicks$PeriodYear %!in% tormv)
 
 #new time periods:
 chicks <- chicks|>
@@ -48,9 +57,12 @@ nrfleglingsperyearchicks <- chicks |>
   group_by(layyear) |>
   summarize(fledgedperyear = sum(success))
 
+# View(nrfleglingsperyearchicks)
+
 #merge eggs and fledged per year
 together <- left_join(nreggsperyear, nrfleglingsperyearchicks, by='layyear')
 
+# View(together)
 #make a graph of average eggs per year and fledged per year during the two periods
 
 histogramdata <- together %>%
@@ -84,13 +96,14 @@ histogramdata <- together %>%
     .groups = "drop"
   )
 
-
 bars_long <- histogramdata %>%
   pivot_longer(
     cols = c(mean_eggs, mean_fledglings, se_eggs, se_fledglings),
     names_to = c(".value", "variable"),
     names_pattern = "(.*)_(eggs|fledglings)"
   )
+
+# View(bars_long)
 
 
 # Find a scaling factor to match proportion (0-1) to the bar y-axis
@@ -127,7 +140,7 @@ ggplot() +
         ymin = (mean_success - se_success) * scale_factor,
         ymax = (mean_success + se_success) * scale_factor,
         color = "Proportion success"),
-    width = 0.2
+    width = 0.2,
   ) +
   scale_y_continuous(
     name = "Mean number of eggs / fledglings (± SE)",
@@ -152,6 +165,7 @@ ggplot() +
 
 
 
+#is this the same plot??? 
 
 # Define dodge for consistent positioning
 pd <- position_dodge(width = 0.9)
@@ -170,12 +184,6 @@ ggplot() +
     aes(x = TimePeriod, ymin = mean - se, ymax = mean + se, group = variable),
     position = pd,
     width = 0.2
-  ) +
-  # Line + points for success (scaled)
-  geom_line(
-    data = histogramdata,
-    aes(x = TimePeriod, y = mean_success * scale_factor, group = 1, color = "Proportion success"),
-    size = 1
   ) +
   geom_point(
     data = histogramdata,
@@ -227,6 +235,12 @@ chicks <- chicks |>
 #rescale number of nests per year
 chicks$nrnestperyear_scaled <- scale(chicks$nrnestperyear)
 
+
+View(chicks)
+
+chicks2<-filter(chicks, chicks$PeriodYear!=2001)
+chicks2<-filter(chicks, chicks$PeriodYear!=2020)
+
 #glm model
 glmer_model <- glmer(success ~ TimePeriod + nrnestperyear_scaled + (1|TerritoryID.x) + (1|BrF) + (1|BrM)+(1|NestName),
                      data = chicks,
@@ -245,11 +259,22 @@ glmer_model_3 <- glmer(success ~ TimePeriod+nrnestperyear_scaled +(1|TerritoryID
                       family = binomial)
 summary(glmer_model_3)
 
+View(chicks)
+tab_model(glmer_model_3)
+
+AIC(glmer_model, glmer_model_2, glmer_model_3)
+
+modest_transformed<-exp(0.34177) / (exp(0.34177) + 1)
+
+CI_min<-exp(0.34177-1.96*0.08709)/ (exp(0.34177-1.96*0.08709)+1)
+CI_max<-exp(0.34177+1.96*0.08709)/ (exp(0.34177+1.96*0.08709)+1)
+
 #estimate time period with nrnest/year: -1.37800
 #without +nrnestperyear_scaled estimate is -1.3881
 #dharma
 
 library(DHARMa)
+
 
 # Simulate residuals
 sim_res <- simulateResiduals(fittedModel = glmer_model_3, n = 1000)
@@ -282,6 +307,7 @@ library(ggplot2)
 
 p_time <- ggpredict(glmer_model_3, terms = "TimePeriod")
 
+View(p_time)
 ggplot(p_time, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.15) +
@@ -290,7 +316,9 @@ ggplot(p_time, aes(x = x, y = predicted)) +
   theme_minimal()
 
 
-p_both <- ggpredict(glmer_model_3, terms = c("nrnestperyear_scaled", "TimePeriod"))
+p_both <- ggpredict(glmer_model_3, terms = c("nrnestperyear_scaled", "TimePeriod"), back_transform = T)
+p_both2 <- ggpredict(glmer_model_3, terms = c("nrnestperyear_scaled", "TimePeriod"))
+
 ggplot(p_both, aes(x = x, y = predicted, colour = group)) +
   geom_line(size = 1.2) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, colour = NA) +
