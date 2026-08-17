@@ -61,6 +61,7 @@ nestdata<-nestdata[,-c(11,13,15)]
 nestdata$propFledged<-nestdata$NoFledglings / nestdata$ClutchSize
 #prop fledged based on brood size  - largely similar except very few discrepancies 
 nestdata$propFledged_brd<-nestdata$NoFledglings / nestdata$BroodSize
+nestdata$propFledged_brd[is.nan(nestdata$propFledged_brd)]<-0
 
 #average lay date 
 nestdata$LayDateEarliest<-as.Date(nestdata$LayDateEarliest, '%Y-%m-%d')
@@ -79,19 +80,19 @@ nestdata<-nestdata[!with(nestdata, is.na(LayDateEarliest) & is.na(LayDateLatest)
 
 #add time period 
 nestdata<-nestdata%>%
-  mutate(TimePeriod = case_when( layyear < 2006 ~ "1997-2005", 
-                                 layyear > 2005 & layyear < 2015 ~ '2006-2014', 
-                                 layyear > 2014 ~ '2015-2023'))
+  mutate(TimePeriod = case_when( layyear < 2011 ~ "1997-2010", 
+                                 layyear > 2010 ~ '2011-2024'))
 
 #there are two nests in 2024 
 
-nestdata<-nestdata %>% filter(layyear<2024) #remove 2024 
+# nestdata<-nestdata %>% filter(layyear<2024) #remove 2024 
 
 
 #merge nest data with breed group data 
 
 nestdata<-left_join(nestdata,breedgroupinfo, by=c('BreedGroupID'))
 
+clean_nestdata<-nestdata
 
 #checking with pedigree 90 day survival 
 
@@ -104,62 +105,83 @@ ped<-read.csv('updated pedigree.csv', stringsAsFactors = F, sep=';')
 ped<-filter(ped, ped$GenDadConfidence >=80 & ped$GenMumConfidence >=80)
 
 
-pedfate<-left_join(nestdata,ped, by='NestID')
+pedfate<-left_join(clean_nestdata,ped, by='NestID')
 
 
 lifespan<-read.csv('lifespan_28_5_24.csv', stringsAsFactors = F)
 lifespan<-lifespan[,-c(1)]
-pedfate<-left_join(pedfate, lifespan, by='BirdID')
+pedfate_lifespan<-left_join(pedfate, lifespan, by='BirdID')
 
 
-pedfate<-pedfate%>%group_by(NestID)%>%
+#what the FUCK does this do 
+#these are all the nests that arent in the pedigree right, because no bird ID linked to nest
+pedfate_checkID<-pedfate_lifespan%>%group_by(NestID)%>%
   mutate(nrpedrow= case_when(is.na(BirdID)~ 0, TRUE ~ n()
   ))
 
-pedfate<-pedfate%>%
+#number of fledglings according to the pedigree 
+pedfate_checkID<-pedfate_checkID%>%
   group_by(NestID)%>%
   mutate(nrpedfl = sum(newlifespan > 20 ))
 
-pedfate<-pedfate%>%
-  mutate(maxfl = max(NoFledglings, nrpedfl))
+View(pedfate_checkID)
+#but should check with original nest right 
+
+pedfate_fls<-pedfate_checkID%>%
+  mutate(maxfl = case_when(is.na(nrpedfl)~NoFledglings,
+                           !is.na(nrpedfl)~max(NoFledglings, nrpedfl)))
+
+#what about birds without a nest ID in the pedigree 
 
 
-
-pedfate<-pedfate%>%
+#but this worked somehow 
+pedfate_clutch<-pedfate_fls%>%
   mutate(maxclutchsize = max(nrpedrow, ClutchSize, BroodSize))
 
-pedfate$maxfl[is.na(pedfate$maxfl)]<-0
 
-pedfate$propfl_true<-pedfate$maxfl / pedfate$maxclutchsize
+#
+#141 rows with NA max nr of fledglings 
+pedfate_clutch$maxfl[is.na(pedfate_clutch$maxfl)]<-0
 
+#some rows have no fledglings in both nest and ped data, but status assignment for breedgroups shows fl statuses 
 
+pedfate_clutch$propfl_true<-pedfate_clutch$maxfl / pedfate_clutch$maxclutchsize
+
+View(pedfate_clutch)
 #nan for nests that have 0 eggs 
 
-pedfate<-pedfate[,-c(29:36)]
-pedfate<-pedfate[,-c(27:29)]
-pedfate<-unique(pedfate)
+pedfate_clutch<-pedfate_clutch[,-c(29:36)]
+pedfate_clutch<-pedfate_clutch[,-c(27:29)]
+pedfate_clutch<-unique(pedfate_clutch)
 
 
-test<-pedfate%>%
+test<-pedfate_clutch%>%
   group_by(NestID)%>%
   summarise(n=n())
 
+pedfate_clutch<-as.data.frame(pedfate_clutch)
+
+whyna<-filter(pedfate_clutch, is.na(pedfate_clutch$propfl_true))
+#0 divided by 0 
+
+
+
 #no more duplicate rows 
 
-write.csv(pedfate, 'pedfate.csv')
+write.csv(pedfate_clutch, 'pedfate.csv')
 
 #nests that have no fledglings but have birds from the pedigree 
-#there are also more rows when joined so multiple birds from same nest 
+#there are also more rows when joined so multiple birds from same nest  
 
 #how do you know if its the same bird? maybe its the same bird but not assigned to the nest? 
 
 #create new row in the df 
 #if nr of fledglings is 0 and bird ID is not NA, assign mismatch 
-
-test<-pedfate %>%
-  mutate(mismatch= case_when(NoFledglings==0 & !is.na(BirdID) & newlifespan>20 ~ 'Mismatch',
-                             NoFledglings==0 & !is.na(BirdID) & newlifespan<20 ~ 'Match',
-                             NoFledglings==0 & is.na(BirdID)~ 'Match'))
+# 
+# test<-pedfate %>%
+#   mutate(mismatch= case_when(NoFledglings==0 & !is.na(BirdID) & newlifespan>20 ~ 'Mismatch',
+#                              NoFledglings==0 & !is.na(BirdID) & newlifespan<20 ~ 'Match',
+#                              NoFledglings==0 & is.na(BirdID)~ 'Match'))
 
 
 
